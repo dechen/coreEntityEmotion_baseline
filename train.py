@@ -12,6 +12,9 @@ from joblib import dump
 import re
 from scipy.sparse import vstack
 from tqdm import tqdm
+import time
+
+isDebug = False
 
 class Train():
     def __init__(self):
@@ -31,7 +34,8 @@ class Train():
         print("loading all ner corpus from train data...")
 
         nerCorpus = []
-        for news in tqdm(trainData):
+        tt = trainData
+        for news in tqdm(tt):
             nerCorpus.append(' '.join(self.getEntity(news)))
 
         print("fitting ner tfIdf model...")
@@ -143,6 +147,7 @@ class Train():
         self.nerDict = []
         for line in nerDictFile:
             self.nerDict.append(line.strip())
+        self.nerDict = set(self.nerDict)
 
     def getWords(self, news):
         '''
@@ -150,10 +155,16 @@ class Train():
         :param news:
         :return:
         '''
+
+        # t_start = time.clock()
+
         title = news['title']
         content = news['content']
 
         words = jieba.cut(title + '\t' + content)
+
+        # t_end = time.clock()
+        # print('getWords consume: ', t_end - t_start)
 
         return list(words)
 
@@ -165,10 +176,19 @@ class Train():
         '''
         ners = []
         words = self.getWords(news)
+
+        # t_start = time.clock()
+
         for word in words:
             if (word in self.nerDict):
                 ners.append(word)
+
+        # t_end = time.clock()
+        # print('getEntity consume: ', t_end - t_start)
+
         return ners
+
+
 
     def loadData(self, filePath):
         f = codecs.open(filePath,'r', 'utf-8')
@@ -179,6 +199,12 @@ class Train():
         return data
 
 if __name__ == '__main__':
+
+    t_start= time.clock()
+
     trainer = Train()
     trainer.trainCoreEntity()
     trainer.trainEmotion()
+
+    t_end = time.clock()
+    print("total time: ", t_end - t_start)
