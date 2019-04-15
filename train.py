@@ -143,6 +143,7 @@ class Train():
         self.nerDict = []
         for line in nerDictFile:
             self.nerDict.append(line.strip())
+        self.nerDict = set(self.nerDict)
 
     def getWords(self, news):
         '''
