@@ -1,8 +1,11 @@
 # -*- coding: utf-8 -*-
+import sys, getopt
 from joblib import load
 from train import Train
 import re
 import codecs
+
+DATA_SAVE_PATH = ''
 
 class Test(Train):
     def __init__(self):
@@ -56,7 +59,25 @@ class Test(Train):
             f_submit.write(','.join(all_emotions))
             f_submit.write('\n')
 
+def parseArgv():
+    ###解析命令行
+    argv = sys.argv[1:]
+    global DATA_SAVE_PATH
+    try:
+        opts, args = getopt.getopt(argv, "h", ["dfile="])
+    except getopt.GetoptError:
+        print("src.py --data <datafile>")
+        sys.exit(2)
+    for opt, arg in opts:
+        if opt == "-h":
+            print("src.py --data <datafile>")
+        elif opt == "--dfile":
+            DATA_SAVE_PATH = arg
+
+    assert ((DATA_SAVE_PATH != ""))
+
 if __name__ == '__main__':
+    parseArgv()
     test = Test()
     test.testCoreEntity()
 
