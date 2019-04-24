@@ -1,0 +1,10 @@
+.idea/
+*.txt
+*.joblib
+chinese_L-12_H-768_A-12.zip
+chinese_L-12_H-768_A-12/
+data/
+models/
+models_old/
+.ipynb_checkpoints/
+__pycache__/
