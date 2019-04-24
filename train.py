@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
 
+import os
+import time
 import jieba
 import codecs
 import json
@@ -8,7 +10,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.svm import LinearSVC
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.preprocessing import normalize
-from joblib import dump
+from joblib import dump, load
 import re
 from scipy.sparse import vstack
 from tqdm import tqdm
@@ -30,39 +32,56 @@ class Train():
 
         print("loading all ner corpus from train data...")
 
-        nerCorpus = []
-        for news in tqdm(trainData):
-            nerCorpus.append(' '.join(self.getEntity(news)))
+        if not os.path.exists('models/nerCorpus.joblib'):
+            nerCorpus = []
+            for news in tqdm(trainData):
+                nerCorpus.append(' '.join(self.getEntity(news)))
+            dump(nerCorpus, 'models/nerCorpus.joblib')
+        else:
+            nerCorpus = load('models/nerCorpus.joblib')
 
-        print("fitting ner tfIdf model...")
-        tfIdf = TfidfVectorizer()
-        tfIdf.fit(nerCorpus)
-        # 1.1 save tfIdf model
-        dump(tfIdf, 'models/nerTfIdf.joblib')
+        if not os.path.exists("models/nerTfIdf.joblib"):
+            print("fitting ner tfIdf model...")
+            tfIdf = TfidfVectorizer()
+            tfIdf.fit(nerCorpus)
+            # 1.1 save tfIdf model
+            dump(tfIdf, 'models/nerTfIdf.joblib')
+        else:
+            print("loading ner tfIdf model from file...")
+            tfIdf = load('models/nerTfIdf.joblib')
 
+        if not os.path.exists('models/CoreEntityCLF.joblib'):
+            # 2. train LR with tfIdf score as features
+            isCoreX = []
+            isCoreY = []
+            # for news in tqdm(trainData[:5]):
+            for news in tqdm(trainData):
 
+                tfIdfNameScore = self.getTfIdfScore(news, tfIdf)
 
-        # 2. train LR with tfIdf score as features
-        isCoreX = []
-        isCoreY = []
-        for news in trainData:
+                coreEntity_GroundTruth = [x['entity'] for x in news['coreEntityEmotions']]
+                for name, score in tfIdfNameScore:
+                    if(name in coreEntity_GroundTruth):
+                        isCoreX.append([score])
+                        isCoreY.append(1)
+                    else:
+                        isCoreX.append([score])
+                        isCoreY.append(0)
 
-            tfIdfNameScore = self.getTfIdfScore(news, tfIdf)
+            dump(isCoreX, 'models/isCoreX.joblib')
+            dump(isCoreY, 'models/isCoreY.joblib')
+            # print(isCoreX, isCoreY)
+            # return
 
-            coreEntity_GroundTruth = [x['entity'] for x in news['coreEntityEmotions']]
-            for name, score in tfIdfNameScore:
-                if(name in coreEntity_GroundTruth):
-                    isCoreX.append([score])
-                    isCoreY.append(1)
-                else:
-                    isCoreX.append([score])
-                    isCoreY.append(0)
+            # 3. train LR model for coreEntity
 
-        # 3. train LR model for coreEntity
-        print("training LR model for coreEntity...")
-        clf = LogisticRegression(random_state=0, solver='lbfgs',
-                                 multi_class='multinomial').fit(isCoreX, isCoreY)
-        dump(clf, 'models/CoreEntityCLF.joblib')
+            print("training LR model for coreEntity...")
+            clf = LogisticRegression(random_state=0, solver='lbfgs',
+                                     multi_class='multinomial').fit(isCoreX, isCoreY)
+            dump(clf, 'models/CoreEntityCLF.joblib')
+        else:
+            print("loading LR model for file...")
+            clf = load('models/CoreEntityCLF.joblib')
 
     def trainEmotion(self):
         '''
@@ -72,55 +91,78 @@ class Train():
         '''
         trainData = self.loadData('data/coreEntityEmotion_train.txt')
 
-        emotionX = []
-        emotionY = []
+        if not os.path.exists('models/emotionX.joblib'):
 
-        print("loading emotion corpus from train data...")
+            emotionX = []
+            emotionY = []
 
-        # 1. get all related sentences to the entities
-        for news in tqdm(trainData):
+            print("loading emotion corpus from train data...")
 
-            text = news['title'] + '\n' + news['content']
-            entities = [x['entity'] for x in news['coreEntityEmotions']]
-            emotions = [x['emotion'] for x in news['coreEntityEmotions']]
-            entityEmotionMap = dict(zip(entities, emotions))
-            entitySentsMap = {}
-            for entity in entityEmotionMap.keys():
-                entitySentsMap[entity] = []
+            # 1. get all related sentences to the entities
+            for news in tqdm(trainData):
 
-            for sent in re.split(r'[\n\t，。！？“”（）]',text):
+                text = news['title'] + '\n' + news['content']
+                entities = [x['entity'] for x in news['coreEntityEmotions']]
+                emotions = [x['emotion'] for x in news['coreEntityEmotions']]
+                entityEmotionMap = dict(zip(entities, emotions))
+                entitySentsMap = {}
                 for entity in entityEmotionMap.keys():
-                    if(entity in sent):
-                        entitySentsMap[entity].append(sent)
+                    entitySentsMap[entity] = []
 
-            for entity, sents in entitySentsMap.items():
-                relatedText = ' '.join(sents)
-                emotionX.append([relatedText])
-                emotionY.append(entityEmotionMap[entity])
+                ###寻找每一个命名实体对应的句子，值为列表
+                for sent in re.split(r'[\n\t，。！？“”（）]', text):
+                    for entity in entityEmotionMap.keys():
+                        if (entity in sent):
+                            entitySentsMap[entity].append(sent)
+
+                for entity, sents in entitySentsMap.items():
+                    relatedText = ' '.join(sents)
+                    emotionX.append([relatedText]) #值为将包含命名实体的句子用空格连接的字符串，用列表括起来
+                    emotionY.append(entityEmotionMap[entity]) #值为情感
+
+            dump(emotionX, 'models/emotionX.joblib')
+            dump(emotionY, 'models/emotionY.joblib')
+        else:
+            print("loading emotionX and emotionY from file...")
+            emotionX = load('models/emotionX.joblib')
+            emotionY = load('models/emotionY.joblib')
 
         # 2. train tf-idf model for emotion related words
-        emotionWordCorpus = []
-        for news in trainData:
-            emotionWordCorpus.append(' '.join(self.getWords(news)))
+        if not os.path.exists('models/emotionTfIdf.joblib'):
+            print("fitting emotion tfIdf model...")
 
-        print("fitting emotion tfIdf model...")
+            emotionWordCorpus = []
+            for news in trainData:
+                emotionWordCorpus.append(' '.join(self.getWords(news)))
 
-        tfIdf = TfidfVectorizer()
-        tfIdf.fit(emotionWordCorpus)
-        dump(tfIdf, 'models/emotionTfIdf.joblib')
+            tfIdf = TfidfVectorizer()
+            tfIdf.fit(emotionWordCorpus)
+            dump(tfIdf, 'models/emotionTfIdf.joblib')
+        else:
+            print("loading emotion tfIdf model...")
+            tfIdf = load('models/emotionTfIdf.joblib')
 
-        # 3. use naive bayes to train emotion classifiction
-        emotionX = vstack([tfIdf.transform(x) for x in emotionX]).toarray()
+        if not os.path.exists('models/emotionCLF.joblib'):
 
-        print("training emotion clf with linearSVC...")
+            # 3. use naive bayes to train emotion classifiction
+            s_time = time.clock()
+            lst = [tfIdf.transform(x) for x in emotionX]
+            e_time = time.clock()
+            print("time consuming: %f" %(e_time - s_time))
 
-        print(emotionX.shape)
-        clf = MultinomialNB()
-        clf.fit(emotionX, emotionY)
+            emotionX = vstack(lst).tocsr()
 
-        print(clf.score(emotionX, emotionY))
+            print("training emotion clf with linearSVC...")
 
-        dump(clf, 'models/emotionCLF.joblib')
+            print(emotionX.shape)
+            clf = MultinomialNB()
+            clf.fit(emotionX, emotionY)
+
+            print(clf.score(emotionX, emotionY))
+
+            dump(clf, 'models/emotionCLF.joblib')
+        else:
+            clf = load('models/emotionCLF.joblib')
 
     def getTfIdfScore(self, news, tfIdf):
         featureName = tfIdf.get_feature_names()
@@ -182,4 +224,4 @@ class Train():
 if __name__ == '__main__':
     trainer = Train()
     trainer.trainCoreEntity()
-    trainer.trainEmotion()
+    # trainer.trainEmotion()
