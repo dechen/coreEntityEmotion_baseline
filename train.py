@@ -15,6 +15,8 @@ import re
 from scipy.sparse import vstack
 from tqdm import tqdm
 
+jieba.load_userdict('./models/nerDict.txt') #为结巴分词指定自定义词典
+
 class Train():
     def __init__(self):
         # load nerDict as named entity recognizer
@@ -33,14 +35,21 @@ class Train():
         print("loading all ner corpus from train data...")
 
         if not os.path.exists('models/nerCorpus.joblib'):
+            self.news_vocab_lst = []
             nerCorpus = []
             for news in tqdm(trainData):
-                nerCorpus.append(' '.join(self.getEntity(news)))
+                t = self.getEntity(news)
+                self.news_vocab_lst.append(t)
+                nerCorpus.append(' '.join(t))
             dump(nerCorpus, 'models/nerCorpus.joblib')
+            dump(self.news_vocab_lst, 'models/news_vocab_lst.joblib')
+            # print(nerCorpus)
         else:
             nerCorpus = load('models/nerCorpus.joblib')
+            self.news_vocab_lst =load('models/news_vocab_lst.joblib')
 
         if not os.path.exists("models/nerTfIdf.joblib"):
+        # if True:
             print("fitting ner tfIdf model...")
             tfIdf = TfidfVectorizer()
             tfIdf.fit(nerCorpus)
@@ -51,25 +60,40 @@ class Train():
             tfIdf = load('models/nerTfIdf.joblib')
 
         if not os.path.exists('models/CoreEntityCLF.joblib'):
+        # if True:
             # 2. train LR with tfIdf score as features
             isCoreX = []
             isCoreY = []
-            # for news in tqdm(trainData[:5]):
-            for news in tqdm(trainData):
 
-                tfIdfNameScore = self.getTfIdfScore(news, tfIdf)
+            self.featureName = tfIdf.get_feature_names()
 
-                coreEntity_GroundTruth = [x['entity'] for x in news['coreEntityEmotions']]
+            for news, news_vocab in tqdm(zip(trainData, self.news_vocab_lst)):
+
+                title_lst = list(jieba.cut(news["title"], cut_all=False))
+                # print(title_lst)
+
+                tfIdfNameScore = self.getTfIdfScore(news_vocab, tfIdf)
+
+                coreEntity_GroundTruth_t = [x['entity'] for x in news['coreEntityEmotions']]
+                coreEntity_GroundTruth = []
+                for s in coreEntity_GroundTruth_t:
+                    coreEntity_GroundTruth.extend(list(jieba.cut(s, cut_all=False)))
+
+                # print(coreEntity_GroundTruth)
+
                 for name, score in tfIdfNameScore:
+                    sample = [score, 0]
+                    label = 0
                     if(name in coreEntity_GroundTruth):
-                        isCoreX.append([score])
-                        isCoreY.append(1)
-                    else:
-                        isCoreX.append([score])
-                        isCoreY.append(0)
+                        label = 1
+                    if name in title_lst:
+                        sample[1] = 1
 
-            dump(isCoreX, 'models/isCoreX.joblib')
-            dump(isCoreY, 'models/isCoreY.joblib')
+                    isCoreX.append(sample)
+                    isCoreY.append(label)
+
+            # dump(isCoreX, 'models/isCoreX.joblib')
+            # dump(isCoreY, 'models/isCoreY.joblib')
             # print(isCoreX, isCoreY)
             # return
 
@@ -164,10 +188,7 @@ class Train():
         else:
             clf = load('models/emotionCLF.joblib')
 
-    def getTfIdfScore(self, news, tfIdf):
-        featureName = tfIdf.get_feature_names()
-
-        doc = self.getEntity(news)
+    def getTfIdfScore(self, doc, tfIdf):
 
         tfIdfFeatures = tfIdf.transform([' '.join(doc)])
 
@@ -175,7 +196,7 @@ class Train():
         # normalize
         tfIdfScoresNorm = normalize([tfIdfScores], norm='max')
 
-        tfIdfNameScore = [(featureName[x[0]], x[1]) for x in zip(tfIdfFeatures.indices, tfIdfScoresNorm[0])]
+        tfIdfNameScore = [(self.featureName[x[0]], x[1]) for x in zip(tfIdfFeatures.indices, tfIdfScoresNorm[0])]
         tfIdfNameScore = sorted(tfIdfNameScore, key=lambda x: x[1], reverse=True)
 
         return tfIdfNameScore

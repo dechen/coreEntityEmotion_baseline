@@ -5,7 +5,10 @@ from joblib import load
 from train import Train
 import re
 import codecs
+import jieba
 from tqdm import tqdm
+
+jieba.load_userdict('./models/nerDict.txt') #为结巴分词指定自定义词典
 
 DATA_SAVE_PATH = ''
 
@@ -14,33 +17,41 @@ class Test(Train):
         super(Test, self).__init__()
         self.coreEntityTfIdf = load('models/nerTfIdf.joblib')
         self.coreEntityCLF = load('models/coreEntityCLF.joblib')
+        self.featureName = self.coreEntityTfIdf.get_feature_names()
 
-        self.emotionTfIdf = load('models/emotionTfIdf.joblib')
-        self.emotionCLF = load('models/emotionCLF.joblib')
+        # self.emotionTfIdf = load('models/emotionTfIdf.joblib')
+        # self.emotionCLF = load('models/emotionCLF.joblib')
 
     def testCoreEntity(self):
+        # testData = self.loadData('data/coreEntityEmotion_train.txt')
         testData = self.loadData('data/coreEntityEmotion_test_stage1.txt')
 
-        f_submit = codecs.open('data/coreEntityEmotion_sample_submission_stage1.txt',
+        f_submit = codecs.open('data/submission_3.txt',
                                         'w', 'utf-8')
 
-        print("length of test data: %d" %len(testData))
+        # print("length of test data: %d" %len(testData))
 
         # print(self.coreEntityCLF.classes_)
 
-        for news in tqdm(testData):
+        for news in tqdm(testData[:10]):
             # print(news)
             predictCoreEntityEmotion = {}
 
-            tfIdfNameScore = self.getTfIdfScore(news, self.coreEntityTfIdf)
+            doc = self.getEntity(news)
+            tfIdfNameScore = self.getTfIdfScore(doc, self.coreEntityTfIdf)
 
             # s_time = time.clock()
+
+            title_lst = list(jieba.cut(news["title"], cut_all=False))
 
             # predict core Entities
             coreEntities = []
             count = 0
             for name, score in tfIdfNameScore:
-                proba = self.coreEntityCLF.predict_proba([[score]])[0]
+                sample = [score, 0]
+                if name in title_lst:
+                    sample[1] = 1
+                proba = self.coreEntityCLF.predict_proba([sample])[0]
                 # print(name, proba)
                 rescale_proba = proba[1] / proba[0] * 300
                 if(rescale_proba > 1):
@@ -59,15 +70,17 @@ class Test(Train):
             # s_time = time.clock()
             # predict emotion of core entity
             for entity in coreEntities:
-                text = news['title'] + '\n' + news['content']
-                relatedSents = []
-                for sent in re.split(r'[\n\t，。！？“”（）]', text):
-                    if (entity in sent):
-                        relatedSents.append(sent)
-                relatedText = ' '.join(relatedSents)
-                emotionTfIdfFeature = self.emotionTfIdf.transform([relatedText]).toarray()
-                emotion = self.emotionCLF.predict(emotionTfIdfFeature)
-                predictCoreEntityEmotion[entity] = emotion[0]
+                # text = news['title'] + '\n' + news['content']
+                # relatedSents = []
+                # for sent in re.split(r'[\n\t，。！？“”（）]', text):
+                #     if (entity in sent):
+                #         relatedSents.append(sent)
+                # relatedText = ' '.join(relatedSents)
+                # emotionTfIdfFeature = self.emotionTfIdf.transform([relatedText]).toarray()
+                # emotion = self.emotionCLF.predict(emotionTfIdfFeature)
+                # predictCoreEntityEmotion[entity] = emotion[0]
+
+                predictCoreEntityEmotion[entity] = "POS"
 
             # e_time = time.clock()
             # print("#2 time consuming: %f" % (e_time - s_time))
