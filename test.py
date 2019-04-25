@@ -33,12 +33,11 @@ class Test(Train):
 
         # print(self.coreEntityCLF.classes_)
 
-        for news in tqdm(testData[:10]):
+        for news in tqdm(testData):
             # print(news)
             predictCoreEntityEmotion = {}
 
-            doc = self.getEntity(news)
-            tfIdfNameScore = self.getTfIdfScore(doc, self.coreEntityTfIdf)
+            tfIdfNameScore = self.getTfIdfScore(news, self.coreEntityTfIdf)
 
             # s_time = time.clock()
 

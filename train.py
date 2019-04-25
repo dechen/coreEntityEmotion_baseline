@@ -31,22 +31,24 @@ class Train():
         '''
         # 1. train tfIdf as core entity score model
         trainData = self.loadData('data/coreEntityEmotion_train.txt')
+        testData = self.loadData('data/coreEntityEmotion_test_stage1.txt')
 
         print("loading all ner corpus from train data...")
 
         if not os.path.exists('models/nerCorpus.joblib'):
-            self.news_vocab_lst = []
+            # self.news_vocab_lst = []
             nerCorpus = []
-            for news in tqdm(trainData):
+            all_data = trainData + testData
+            for news in tqdm(all_data):
                 t = self.getEntity(news)
-                self.news_vocab_lst.append(t)
+                # self.news_vocab_lst.append(t)
                 nerCorpus.append(' '.join(t))
             dump(nerCorpus, 'models/nerCorpus.joblib')
-            dump(self.news_vocab_lst, 'models/news_vocab_lst.joblib')
+            # dump(self.news_vocab_lst, 'models/news_vocab_lst.joblib')
             # print(nerCorpus)
         else:
             nerCorpus = load('models/nerCorpus.joblib')
-            self.news_vocab_lst =load('models/news_vocab_lst.joblib')
+            # self.news_vocab_lst =load('models/news_vocab_lst.joblib')
 
         if not os.path.exists("models/nerTfIdf.joblib"):
         # if True:
@@ -67,12 +69,12 @@ class Train():
 
             self.featureName = tfIdf.get_feature_names()
 
-            for news, news_vocab in tqdm(zip(trainData, self.news_vocab_lst)):
+            for news in tqdm(trainData):
 
                 title_lst = list(jieba.cut(news["title"], cut_all=False))
                 # print(title_lst)
 
-                tfIdfNameScore = self.getTfIdfScore(news_vocab, tfIdf)
+                tfIdfNameScore = self.getTfIdfScore(news, tfIdf)
 
                 coreEntity_GroundTruth_t = [x['entity'] for x in news['coreEntityEmotions']]
                 coreEntity_GroundTruth = []
@@ -188,8 +190,9 @@ class Train():
         else:
             clf = load('models/emotionCLF.joblib')
 
-    def getTfIdfScore(self, doc, tfIdf):
+    def getTfIdfScore(self, news, tfIdf):
 
+        doc = self.getEntity(news)
         tfIdfFeatures = tfIdf.transform([' '.join(doc)])
 
         tfIdfScores = tfIdfFeatures.data
