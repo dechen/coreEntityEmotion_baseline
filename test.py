@@ -26,7 +26,7 @@ class Test(Train):
         # testData = self.loadData('data/coreEntityEmotion_train.txt')
         testData = self.loadData('data/coreEntityEmotion_test_stage1.txt')
 
-        f_submit = codecs.open('data/submission_3.txt',
+        f_submit = codecs.open('data/submission_4.txt',
                                         'w', 'utf-8')
 
         # print("length of test data: %d" %len(testData))
@@ -46,8 +46,11 @@ class Test(Train):
             # predict core Entities
             coreEntities = []
             count = 0
-            for name, score in tfIdfNameScore:
-                sample = [score, 0]
+            len_news = len(tfIdfNameScore)
+            for ind, (name, score) in enumerate(tfIdfNameScore):
+                sample = [score, 0, 0]
+                if ind < 0.1 * len_news:
+                    sample[2] = 1
                 if name in title_lst:
                     sample[1] = 1
                 proba = self.coreEntityCLF.predict_proba([sample])[0]

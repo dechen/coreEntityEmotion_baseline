@@ -82,10 +82,12 @@ class Train():
                     coreEntity_GroundTruth.extend(list(jieba.cut(s, cut_all=False)))
 
                 # print(coreEntity_GroundTruth)
-
-                for name, score in tfIdfNameScore:
-                    sample = [score, 0]
+                len_news = len(tfIdfNameScore)
+                for ind, (name, score) in enumerate(tfIdfNameScore):
+                    sample = [score, 0, 0]
                     label = 0
+                    if ind < 0.1 * len_news:
+                        sample[2] = 1
                     if(name in coreEntity_GroundTruth):
                         label = 1
                     if name in title_lst:
