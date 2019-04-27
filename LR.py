@@ -16,11 +16,18 @@ import re
 from scipy.sparse import vstack
 from tqdm import tqdm
 import numpy as np
+import pandas as pd
+from gensim.models.word2vec import Word2Vec
+from gensim.models import KeyedVectors
+
+from src.utils import train_w2v_model
 
 jieba.load_userdict('./models/nerDict.txt') #为结巴分词指定自定义词典
 
 class LR_ent(BaseModel):
     def __init__(self):
+        # self.train_df = load('../data/csvs/train_df.joblib')
+        # self.test_df = load('../data/csvs/test_df.joblib')
         self.train_dt = None
         self.test_dt = None
 
@@ -32,12 +39,13 @@ class LR_ent(BaseModel):
         :return:
         """
 
+        self.train_dt = self.loadData('./data/coreEntityEmotion_train.txt')
+        self.test_dt = self.loadData('./data/coreEntityEmotion_test_stage1.txt')
+
         # load nerDict as named entity recognizer
         self.loadNerDict()
 
         # train tfIdf as core entity score model
-        self.train_dt = self.loadData('data/coreEntityEmotion_train.txt')
-        self.test_dt = self.loadData('data/coreEntityEmotion_test_stage1.txt')
 
         print("loading all ner corpus from train data...")
 
@@ -56,18 +64,12 @@ class LR_ent(BaseModel):
             nerCorpus = load('models/nerCorpus.joblib')
             # self.news_vocab_lst =load('models/news_vocab_lst.joblib')
 
-        if not os.path.exists("models/coreEntityTfIdf.joblib"):
-            # if True:
-            print("fitting ner tfIdf model...")
-            self.coreEntityTfIdf = TfidfVectorizer()
-            self.coreEntityTfIdf.fit(nerCorpus)
-            # 1.1 save tfIdf model
-            dump(self.coreEntityTfIdf, 'models/coreEntityTfIdf.joblib')
-        else:
-            print("loading ner tfIdf model from file...")
-            self.coreEntityTfIdf = load('models/coreEntityTfIdf.joblib')
+        ###将语料库转化为word2vec模型
+        if not os.path.exists('./data/word2vec_models/word2vec.word.100d.model.kv'):
+            train_w2v_model(nerCorpus)
+        self.wv = KeyedVectors.load('./data/word2vec_models/word2vec.word.100d.model.kv', mmap='r')
 
-        self.featureName = self.coreEntityTfIdf.get_feature_names()
+        print(self.wv["机器视觉"])
 
         ###将原始样本集划分为用于模型选择的训练集和验证集
         self.train_dt_ms, self.eval_dt_ms = self.split_train_eval_data(self.train_dt)
@@ -85,6 +87,12 @@ class LR_ent(BaseModel):
         else:
             train_data = self.train_dt
 
+        vocabFile = codecs.open('./data/word2vec_models/word2vec.word.100d.vocab.txt','r','utf-8')
+        self.vocab = []
+        for line in vocabFile:
+            self.vocab.append(line.strip())
+        self.vocab = set(self.vocab)
+
         if not os.path.exists('models/CoreEntityCLF.joblib'):
             # 2. train LR with tfIdf score as features
             isCoreX = []
@@ -92,29 +100,22 @@ class LR_ent(BaseModel):
 
             for news in tqdm(train_data):
 
-                title_lst = list(jieba.cut(news["title"], cut_all=False))
-                # print(title_lst)
+                # title_lst = list(jieba.cut(news["title"], cut_all=False))
 
-                tfIdfNameScore = self.getTfIdfScore(news, self.coreEntityTfIdf)
+                content_lst = self.getEntity(news)
 
                 coreEntity_GroundTruth_t = [x['entity'] for x in news['coreEntityEmotions']]
                 coreEntity_GroundTruth = []
                 for s in coreEntity_GroundTruth_t:
                     coreEntity_GroundTruth.extend(list(jieba.cut(s, cut_all=False)))
 
-                # print(coreEntity_GroundTruth)
-                len_news = len(tfIdfNameScore)
-                for ind, (name, score) in enumerate(tfIdfNameScore):
-                    sample = [score, 0, 0]
+                for idx, word in enumerate(content_lst):
+                    if word not in self.vocab:
+                        continue
                     label = 0
-                    if ind < 0.1 * len_news:
-                        sample[2] = 1
-                    if(name in coreEntity_GroundTruth):
+                    if word in coreEntity_GroundTruth:
                         label = 1
-                    if name in title_lst:
-                        sample[1] = 1
-
-                    isCoreX.append(sample)
+                    isCoreX.append(self.wv[word])
                     isCoreY.append(label)
 
             # 3. train LR model for coreEntity
@@ -137,7 +138,7 @@ class LR_ent(BaseModel):
         # print(self.coreEntityCLF.classes_)
 
         if type == "MS":
-           test_data = self.eval_dt_ms
+            test_data = self.eval_dt_ms
         else:
             test_data = self.test_dt
 
@@ -146,27 +147,24 @@ class LR_ent(BaseModel):
         for news in tqdm(test_data):
             # print(news)
 
-            tfIdfNameScore = self.getTfIdfScore(news, self.coreEntityTfIdf)
-
             # s_time = time.clock()
 
-            title_lst = list(jieba.cut(news["title"], cut_all=False))
+            # title_lst = list(jieba.cut(news["title"], cut_all=False))
+
+            cont_lst = self.getEntity(news)
 
             # predict core Entities
             coreEntities = []
             count = 0
-            len_news = len(tfIdfNameScore)
-            for ind, (name, score) in enumerate(tfIdfNameScore):
-                sample = [score, 0, 0]
-                if ind < 0.1 * len_news:
-                    sample[2] = 1
-                if name in title_lst:
-                    sample[1] = 1
+            for idx, word in enumerate(cont_lst):
+                if word not in self.vocab:
+                    continue
+                sample = self.wv[word]
                 proba = self.coreEntityCLF.predict_proba([sample])[0]
                 # print(name, proba)
                 rescale_proba = proba[1] / proba[0] * 300
                 if (rescale_proba > 1):
-                    coreEntities.append(name)
+                    coreEntities.append(word)
                     count += 1
                     # print(name, rescale_proba)
 
@@ -197,6 +195,9 @@ class LR_ent(BaseModel):
 
             self.en_lst.append(coreEntities)
             self.em_lst.append(entEmotions)
+
+        if type == "test":
+            self.output()
 
     def output(self, type="test"):
         """
@@ -398,6 +399,7 @@ class LR_ent(BaseModel):
             if (word in self.nerDict):
                 ners.append(word)
         return ners
+        # return words
 
     def loadData(self, filePath):
         f = codecs.open(filePath,'r', 'utf-8')
@@ -493,12 +495,11 @@ class LR_ent(BaseModel):
 def main():
     trainer = LR_ent()
     trainer.prepare_data()
-    trainer.fit(type="MS")
-    trainer.predict_score(type="MS")
+    # trainer.fit(type="MS")
+    # trainer.predict_score(type="MS")
 
-    # trainer.trainCoreEntity()
-    # trainer.trainEmotion()
-    # trainer.testCoreEntity()
+    trainer.fit()
+    trainer.predict()
 
 if __name__ == '__main__':
     main()
