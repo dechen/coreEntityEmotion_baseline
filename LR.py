@@ -178,17 +178,17 @@ class LR_ent(BaseModel):
             # predict emotion of core entity
             entEmotions = []
             for entity in coreEntities:
-                # text = news['title'] + '\n' + news['content']
-                # relatedSents = []
-                # for sent in re.split(r'[\n\t，。！？“”（）]', text):
-                #     if (entity in sent):
-                #         relatedSents.append(sent)
-                # relatedText = ' '.join(relatedSents)
-                # emotionTfIdfFeature = self.emotionTfIdf.transform([relatedText]).toarray()
-                # emotion = self.emotionCLF.predict(emotionTfIdfFeature)
-                # predictCoreEntityEmotion[entity] = emotion[0]
+                text = news['title'] + '\n' + news['content']
+                relatedSents = []
+                for sent in re.split(r'[\n\t，。！？“”（）]', text):
+                    if (entity in sent):
+                        relatedSents.append(sent)
+                relatedText = ' '.join(relatedSents)
+                emotionTfIdfFeature = self.emotionTfIdf.transform([relatedText]).toarray()
+                emotion = self.emotionCLF.predict(emotionTfIdfFeature)
+                entEmotions.append(emotion[0])
 
-                entEmotions.append("POS")
+                # entEmotions.append("POS")
 
             # e_time = time.clock()
             # print("#2 time consuming: %f" % (e_time - s_time))
@@ -272,13 +272,17 @@ class LR_ent(BaseModel):
 
         return F1_score
 
-    def trainEmotion(self):
+    def trainEmotion(self, type="test"):
         '''
         train emotion model
         Baseline use tfIdf vector as feature, linearSVC as classfication model
         :return:
         '''
-        trainData = self.loadData('data/coreEntityEmotion_train.txt')
+
+        if type == "MS":
+            train_data = self.train_dt_ms
+        else:
+            train_data = self.train_dt
 
         if not os.path.exists('models/emotionX.joblib'):
 
@@ -288,7 +292,7 @@ class LR_ent(BaseModel):
             print("loading emotion corpus from train data...")
 
             # 1. get all related sentences to the entities
-            for news in tqdm(trainData):
+            for news in tqdm(train_data):
 
                 text = news['title'] + '\n' + news['content']
                 entities = [x['entity'] for x in news['coreEntityEmotions']]
@@ -321,21 +325,21 @@ class LR_ent(BaseModel):
             print("fitting emotion tfIdf model...")
 
             emotionWordCorpus = []
-            for news in trainData:
+            all_data = self.train_dt + self.test_dt
+            for news in tqdm(all_data):
                 emotionWordCorpus.append(' '.join(self.getWords(news)))
-
-            tfIdf = TfidfVectorizer()
-            tfIdf.fit(emotionWordCorpus)
-            dump(tfIdf, 'models/emotionTfIdf.joblib')
+            self.emotionTfIdf = TfidfVectorizer()
+            self.emotionTfIdf.fit(emotionWordCorpus)
+            dump(self.emotionTfIdf, 'models/emotionTfIdf.joblib')
         else:
             print("loading emotion tfIdf model...")
-            tfIdf = load('models/emotionTfIdf.joblib')
+            self.emotionTfIdf = load('models/emotionTfIdf.joblib')
 
         if not os.path.exists('models/emotionCLF.joblib'):
 
             # 3. use naive bayes to train emotion classifiction
             s_time = time.clock()
-            lst = [tfIdf.transform(x) for x in emotionX]
+            lst = [self.emotionTfIdf.transform(x) for x in emotionX]
             e_time = time.clock()
             print("time consuming: %f" %(e_time - s_time))
 
@@ -344,14 +348,14 @@ class LR_ent(BaseModel):
             print("training emotion clf with linearSVC...")
 
             print(emotionX.shape)
-            clf = MultinomialNB()
-            clf.fit(emotionX, emotionY)
+            self.emotionCLF = MultinomialNB()
+            self.emotionCLF.fit(emotionX, emotionY)
 
-            print(clf.score(emotionX, emotionY))
+            print(self.emotionCLF.score(emotionX, emotionY))
 
-            dump(clf, 'models/emotionCLF.joblib')
+            dump(self.emotionCLF, 'models/emotionCLF.joblib')
         else:
-            clf = load('models/emotionCLF.joblib')
+            self.emotionCLF = load('models/emotionCLF.joblib')
 
     def getTfIdfScore(self, news, tfIdf):
 
@@ -495,11 +499,12 @@ class LR_ent(BaseModel):
 def main():
     trainer = LR_ent()
     trainer.prepare_data()
-    # trainer.fit(type="MS")
-    # trainer.predict_score(type="MS")
+    trainer.fit(type="MS")
+    trainer.trainEmotion(type="MS")
+    trainer.predict_score(type="MS")
 
-    trainer.fit()
-    trainer.predict()
+    # trainer.fit()
+    # trainer.predict()
 
 if __name__ == '__main__':
     main()
