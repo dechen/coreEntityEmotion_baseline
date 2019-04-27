@@ -10,8 +10,6 @@ from tqdm import tqdm
 
 jieba.load_userdict('./models/nerDict.txt') #为结巴分词指定自定义词典
 
-DATA_SAVE_PATH = ''
-
 class Test(Train):
     def __init__(self):
         super(Test, self).__init__()

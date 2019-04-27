@@ -1,0 +1,59 @@
+#coding:utf-8
+import os
+import re
+import pickle
+import pandas as pd
+import numpy as np
+import seaborn as sns
+import matplotlib
+import jieba
+from gensim.models.word2vec import Word2Vec
+from tqdm import tqdm_notebook as tqdm
+
+# 训练词向量
+def train_w2v_model(corpus, type='char', min_freq=2, size=100):
+    sentences = []
+
+    # if type == 'char':
+    #     corpus = np.concatenate((train_cut_df['char'], test_cut_df['char']))
+    # elif type == 'word':
+    #     corpus = np.concatenate((train_cut_df['word'], test_cut_df['word']))
+    for e in tqdm(corpus):
+        sentences.append([i for i in e.strip().split() if i])
+    print('训练集语料:', len(corpus))
+    print('总长度: ', len(sentences))
+    model = Word2Vec(sentences, size=size, window=5, min_count=min_freq)
+    model.itos = {}
+    model.stoi = {}
+    model.embedding = {}
+    item_to_id = {}
+    print('保存模型...')
+
+    #     print(sorted(list(model.wv.vocab.keys()), reverse=True))
+
+    for k in tqdm(sorted(list(model.wv.vocab.keys()), reverse=True)):
+        item_to_id[k] = model.wv.vocab[k].index
+    os.makedirs('../../data/word2vec_models/', exist_ok=True)
+    model.wv.save_word2vec_format('../../data/word2vec_models/word2vec.{}.{}d.model.txt'.format(type, size),
+                                  binary=False)
+    pickle.dump(item_to_id, open('../../data/{}_item_to_id.pkl'.format(type), 'wb'))
+    words = model.wv.vocab
+    with open('../../data/word2vec_models/word2vec.{}.{}d.vocab.txt'.format(type, size, min_freq), 'w',
+              encoding='UTF-8') as f:
+        f.write('<S>\n</S>\n<UNK>\n')  # bilm-tf 要求vocab有这三个符号，并且在最前面
+        for word in words:
+            f.write(word + '\n')
+
+    return model
+
+# # 比赛数据
+# model = train_w2v_model(type='char', min_freq=3, size=300)
+# model = train_w2v_model(type='word', min_freq=3, size=300)
+# # train_df[:3]
+# print('OK')
+
+def main():
+    pass
+
+if __name__ == "__main__":
+    main()
